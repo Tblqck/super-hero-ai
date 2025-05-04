@@ -1,7 +1,4 @@
-opencv-python
-numpy
-pandas
-pytesseract
-Pillow
-pyautogui
-requests
+pip install pytz
+pip install tzdata
+pip install firebase-admin
+

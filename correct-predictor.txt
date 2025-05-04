@@ -1,0 +1,703 @@
+import csv
+import time
+import pyautogui
+import cv2
+import numpy as np
+from datetime import datetime
+from ocr_processor import extract_text_from_image, process_text_to_numbers
+
+
+def monitor_and_process():
+    """
+    Monitors the screen for specific text, takes a screenshot when detected,
+    processes the image to extract text and numbers, and logs the data to a CSV file.
+    If the new number matches the last entry, it will resume monitoring the screen.
+    """
+    reference_image_path = 'flew_away_template.png'  # Reference image
+    watch_x1, watch_y1, watch_x2, watch_y2 = 603, 352, 843, 393
+    screenshot_x1, screenshot_y1, screenshot_x2, screenshot_y2 = 548, 417, 868, 518
+    threshold = 0.50
+
+    # Load the reference image for matching
+    template = cv2.imread(reference_image_path, cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        print(f"Error: Reference image '{reference_image_path}' not found.")
+        return
+
+    print("Monitoring screen for the text...")
+
+    while True:
+        try:
+            # Capture screenshot of the specified region
+            screenshot = pyautogui.screenshot(region=(watch_x1, watch_y1, watch_x2 - watch_x1, watch_y2 - watch_y1))
+            screenshot_np = np.array(screenshot)
+            screenshot_gray = cv2.cvtColor(screenshot_np, cv2.COLOR_BGR2GRAY)
+
+            # Perform template matching
+            result = cv2.matchTemplate(screenshot_gray, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+            if max_val >= threshold:
+                # Save final screenshot if text is found
+                final_screenshot = pyautogui.screenshot(region=(screenshot_x1, screenshot_y1, screenshot_x2 - screenshot_x1, screenshot_y2 - screenshot_y1))
+                final_screenshot.save("final_screenshot.png")
+                print("Screenshot saved as 'final_screenshot.png'.")
+                break  # Exit the loop once text is found and screenshot is taken
+
+            time.sleep(1.0)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            break
+
+    # Now, process the screenshot to extract text and log the numbers
+    print("Running OCR processing...")
+
+    # Extract text from the screenshot
+    extracted_text = extract_text_from_image("final_screenshot.png")
+
+    if extracted_text:
+        print(f"Extracted Text: {extracted_text}")
+
+        # Process the text to extract numbers
+        numbers = process_text_to_numbers(extracted_text)
+        if numbers:
+            print(f"Processed Numbers: {numbers}")
+
+            # Get current time
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Read existing CSV to get sequence and last number
+            try:
+                with open('predictions_log.csv', mode='r', newline='') as file:
+                    reader = csv.reader(file)
+                    rows = list(reader)
+                    if len(rows) > 1:  # Skip header
+                        last_row = rows[-1]
+                        if len(last_row) >= 3:  # Ensure the last row has the expected columns
+                            last_number = last_row[2]
+                            sequence = int(last_row[1]) + 1
+                        else:
+                            # If the row doesn't have enough columns, start fresh
+                            last_number = None
+                            sequence = 1
+                    else:
+                        # If the CSV is empty or only contains a header, start fresh
+                        sequence = 1
+                        last_number = None
+            except FileNotFoundError:
+                # Handle case where the file doesn't exist
+                sequence = 1
+                last_number = None
+
+            # Check if the new number is the same as the last number
+            if last_number == str(numbers):  # Compare as string to avoid the list format issue
+                print("The number is the same as the last entry. Restarting screen monitoring.")
+                monitor_and_process()  # Restart the monitoring if the numbers match
+                return  # Stop the current instance of the function
+
+            else:
+                # Get the first number from the list (assuming it's a list with one value)
+                number = numbers[0] if isinstance(numbers, list) else numbers
+
+                # Append new data to CSV
+                with open('predictions_log.csv', mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow([current_time, sequence, number])
+                    print(f"Logged data: Time={current_time}, Sequence={sequence}, Numbers={number}")
+
+        else:
+            print("No valid numbers found in the text.")
+    else:
+        print("Failed to extract text from the image.")
+
+
+# Run the combined function
+monitor_and_process()
+
+
+===========================================================
+to call the ai 
+-----------------------------------------
+from predictor import make_prediction
+
+# Call the prediction function
+predicted_class = make_prediction()
+
+# Check if a valid prediction was made
+if predicted_class is not None:
+    print(f"Handling prediction: {predicted_class}")
+
+    # Perform class-specific actions
+    if predicted_class == 1:
+        print("Executing action for class 1...")
+        # Add function or logic for class 1
+    elif predicted_class == 2:
+        print("Executing action for class 2...")
+        # Add function or logic for class 2
+    else:
+        print("Unhandled class prediction.")
+else:
+    print("Prediction could not be made.")
+======================================================================
+-------------the code below just manages data in both csv 
+---------------------------------------------------------
+import pandas as pd
+
+# Load CSV files
+predictions_log = pd.read_csv('predictions_log.csv')
+rounds_log = pd.read_csv('rounds_log.csv')
+
+# Merge on sequence column
+merged_df = pd.merge(predictions_log, rounds_log, on='Sequence', how='inner')
+
+# Save the result to 'predictions.csv'
+merged_df.to_csv('predictions.csv', index=False)
+-=============================================================
+the code below just chack account balance for (could be used to break )
+---------------------------------------------------------------------------
+import pandas as pd
+
+# Load CSV files
+predictions_log = pd.read_csv('predictions_log.csv')
+rounds_log = pd.read_csv('rounds_log.csv')
+
+# Merge the DataFrames on 'sequence' column
+merged_df = pd.merge(predictions_log, rounds_log, on='sequence', how='inner')
+
+# Sort the merged DataFrame by 'sequence' to ensure correct order
+merged_df = merged_df.sort_values(by='sequence')
+
+# Initial balance and staking amount
+balance = 2000
+staking = 100
+
+# Simulate the trade
+for index, row in merged_df.iterrows():
+    number = row['Numbers']
+    predicted_class = row['predicted_class']
+    
+    # Check if the number is above or below 2.00
+    if number >= 2.00:
+        balance += staking  # Add staking to balance
+    else:
+        balance -= staking  # Subtract staking from balance
+
+# Return the final balance after all trades
+print("Final Balance:", balance)
+
+_=====================================================
+
+The code below would check the staking 
+
+---------------------------------
+import cv2
+import numpy as np
+from PIL import Image
+import pytesseract
+
+# Corrected file path
+image_path = r"C:\Users\DArK_SIDE\Documents\sporty\Screenshot 2025-02-19 151330.png"
+
+# Load the image in grayscale
+image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+# Check if the image is loaded
+if image is None:
+    print("Error: Could not read the image. Check the file path.")
+    exit()
+
+# Increase size (scaling)
+scale_factor = 5  # Adjust as needed
+new_width = image.shape[1] * scale_factor
+new_height = image.shape[0] * scale_factor
+resized_image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+
+# Convert to black and white (binarization)
+_, binary_image = cv2.threshold(resized_image, 150, 255, cv2.THRESH_BINARY)
+
+# Save processed image
+processed_path = r"C:\Users\DArK_SIDE\Documents\sporty\processed_image.png"
+cv2.imwrite(processed_path, binary_image)
+
+# Perform OCR
+extracted_text = pytesseract.image_to_string(Image.open(processed_path), config="--psm 6")
+
+print("Extracted Text:", extracted_text)
+=========================================================
+The code below would check the auto cash out is on 1 for when it on the 2 for when it is off 
+------------------------------------------------=
+import pyautogui
+import cv2
+import numpy as np
+
+# Load reference images
+image_1 = cv2.imread("Screenshot_1.png", cv2.IMREAD_GRAYSCALE)  # Picture 1
+image_2 = cv2.imread("Screenshot_2.png", cv2.IMREAD_GRAYSCALE)  # Picture 2
+
+# Define the region where the toggle button appears (manually adjust these values)
+x, y, width, height = 643, 601, 817, 633  # Adjust based on screen position
+
+# Capture a screenshot of the region
+screenshot = pyautogui.screenshot(region=(x, y, width, height))
+screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
+
+# Function to compare images using template matching
+def match_images(template, screenshot):
+    result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, _ = cv2.minMaxLoc(result)
+    return max_val
+
+# Compare the screenshot with both images
+match_1 = match_images(image_1, screenshot)
+match_2 = match_images(image_2, screenshot)
+
+# Decide which image it matches best
+if match_1 > match_2:
+    print(1)  # Picture 1 detected
+else:
+    print(2)  # Picture 2 detected
+-----------------------------
+================================
+code below screenshot location usful for cross check screenlocation
+--------------------------------
+import pyautogui
+
+def capture_region(x, y, width, height, save_path="screenshot.png"):
+    """Captures a screenshot of the specified region and saves it."""
+    screenshot = pyautogui.screenshot(region=(x, y, width, height))
+    screenshot.save(save_path)
+    print(f"Screenshot saved as {save_path}")
+
+# Example: Capture the 'triger_button' region
+capture_region(535, 510, 256, 28, "trigger_screenshot.png")
+
+# Example: Capture the 'button_watch' region
+capture_region(666, 679, 158, 32, "watch_screenshot.png")
+------------------------------------------
+the code below allows us to get text from image=====
+from digit_recognition import recognize_number
+import config
+
+reference_path = config.REFERENCE_IMAGE_PATH1
+image_path = r"C:\Users\DArK_SIDE\Documents\sporty\edited_screenshot.png"
+
+recognized_text = recognize_number(reference_path, image_path)
+print("Recognized text:", recognized_text)
+-----------------------------
+complete working program 
+--------------------
+import csv
+import time
+import pyautogui
+import cv2
+import numpy as np
+from datetime import datetime
+import pandas as pd
+from predictor import make_prediction
+import sys
+from staking import process_staking
+from check_staking import check_staking
+from check_balance import check_balance
+import config
+import os
+from process_and_recognize import process_and_recognize
+
+print("hello")
+STATE_FILE = config.STATE_FILE  # Ensure this is defined in config.py
+
+def monitor_and_process():
+    watch_x1, watch_y1, watch_x2, watch_y2 = config.WATCH_REGION
+    screenshot_x1, screenshot_y1, screenshot_x2, screenshot_y2 = config.SCREENSHOT_REGION2
+
+    template = cv2.imread(config.REFERENCE_IMAGE_PATH, cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        print(f"Error: Reference image '{config.REFERENCE_IMAGE_PATH}' not found.")
+        return
+
+    print("Monitoring screen for the text...")
+
+    last_number = None
+    sequence = 1  
+
+    if os.path.exists(config.PREDICTIONS_LOG) and os.path.getsize(config.PREDICTIONS_LOG) > 0:
+        try:
+            df = pd.read_csv(config.PREDICTIONS_LOG)
+            if "Numbers" in df.columns and not df.empty:
+                last_number = str(df["Numbers"].dropna().iloc[-1])
+            if "Sequence" in df.columns and not df["Sequence"].dropna().empty:
+                sequence = int(df["Sequence"].dropna().max()) + 1
+        except Exception as e:
+            print(f"Error reading sequence from CSV: {e}")
+
+    start_time = time.time()  # Track when monitoring started
+    MAX_RUNTIME = 60  # Stop monitoring after 60 seconds if nothing is found
+
+    while True:
+        try:
+            # Check if we exceeded the max runtime
+            if time.time() - start_time > MAX_RUNTIME:
+                print("Timeout: No valid detection found. Stopping monitoring.")
+                break  # Exit the loop after the timeout
+
+            screenshot = pyautogui.screenshot(region=(watch_x1, watch_y1, watch_x2, watch_y2))
+            screenshot_np = np.array(screenshot)
+            screenshot_gray = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2GRAY)
+
+            black_pixels = np.sum(screenshot_gray < 10)
+            total_pixels = screenshot_gray.size
+            black_ratio = black_pixels / total_pixels
+
+            if black_ratio > config.MAX_BLACK_RATIO:
+                print(f"Black screen detected ({black_ratio*100:.2f}% black). Retaking screenshot immediately...")
+                continue  
+
+            result = cv2.matchTemplate(screenshot_gray, template, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+            if max_val >= config.THRESHOLD:
+                final_screenshot_path = r"C:\Users\DArK_SIDE\Documents\sporty\final_screenshot000.png"
+                pyautogui.screenshot(final_screenshot_path, region=(screenshot_x1, screenshot_y1, screenshot_x2, screenshot_y2))
+
+                recognized_number = process_and_recognize(final_screenshot_path, config.REFERENCE_IMAGE_PATH1)
+                print("Recognized number:", recognized_number)
+
+                if recognized_number is not None:
+                    new_number = str(recognized_number)
+
+                    if last_number == new_number:
+                        print(f"Extracted number ({new_number}) is the same as last recorded. Continuing monitoring...")
+                        time.sleep(1)
+                        continue
+
+                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    file_exists = os.path.exists(config.PREDICTIONS_LOG) and os.path.getsize(config.PREDICTIONS_LOG) > 0
+
+                    with open(config.PREDICTIONS_LOG, mode='a', newline='') as file:
+                        writer = csv.writer(file)
+                        if not file_exists:
+                            writer.writerow(["Timestamp", "Sequence", "Numbers", "RealAccount"])  
+
+                        writer.writerow([current_time, sequence, new_number, ""])
+                        print(f"Logged data: Time={current_time}, Sequence={sequence}, Numbers={new_number}")
+
+                    last_number = new_number  
+                    sequence += 1  
+
+                    print("Success: A valid number was detected and logged. Stopping monitoring.")
+                    break  # Stop monitoring after a successful detection
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+        time.sleep(0.2)  # Small delay before checking again
+
+
+
+def load_state():
+    """Loads the last saved state from the state file."""
+    if os.path.exists(STATE_FILE):
+        try:
+            state_df = pd.read_csv(STATE_FILE)
+            if state_df.empty or 'sequence' not in state_df.columns:
+                raise ValueError("State file is empty or missing 'sequence' column")
+
+            return (
+                float(state_df.iloc[-1]['balance']),
+                float(state_df.iloc[-1]['stop_loss']),
+                float(state_df.iloc[-1]['next_target']),
+                int(state_df.iloc[-1]['sequence'])  # Ensure we store the last sequence
+            )
+        except Exception as e:
+            print(f"⚠️ Error loading state: {e}")
+
+    # Default values if no state file exists
+    return float(config.INITIAL_BALANCE), float(config.STOP_LOSS), float(config.NEXT_TARGET), 0  
+
+def save_state(balance, stop_loss, next_target, sequence):
+    """Saves the current state to a CSV file by appending new rows instead of overwriting."""
+    new_entry = pd.DataFrame([{ 
+        "balance": balance, 
+        "stop_loss": stop_loss, 
+        "next_target": next_target, 
+        "sequence": sequence 
+    }])
+    
+    if os.path.exists(STATE_FILE):
+        new_entry.to_csv(STATE_FILE, mode='a', header=False, index=False)
+    else:
+        new_entry.to_csv(STATE_FILE, index=False)
+
+def simulate_trade():
+    print("simulate_trade() called")
+    """Simulates trading based on predictions and updates balance accordingly."""
+    try:
+        print("\n📄 Reading CSV files...")
+
+        balance, stop_loss, next_target, last_sequence = load_state()
+
+        predictions_log = pd.read_csv(config.PREDICTIONS_LOG)
+        rounds_log = pd.read_csv(config.ROUNDS_LOG)
+
+        if predictions_log.empty or rounds_log.empty:
+            return False  # Keep looping if data is missing
+
+        staking = float(config.STAKING_AMOUNT)
+        print(f"💰 Current balance: {balance} | Sequence: {last_sequence}")
+
+        # Sort logs to ensure correct sequence order
+        predictions_log = predictions_log.sort_values(by='Sequence')
+        rounds_log = rounds_log.sort_values(by='Sequence')
+
+        # Process only new sequences
+        common_sequences = sorted(set(predictions_log['Sequence']).intersection(rounds_log['Sequence']))
+        new_sequences = [seq for seq in common_sequences if seq > last_sequence]  # Process only new ones
+
+        if not new_sequences:
+            return False  # No new data, exit function
+
+        trade_made = False  
+
+        for sequence in new_sequences:
+            pred_row = predictions_log[predictions_log['Sequence'] == sequence].iloc[0]
+            round_row = rounds_log[rounds_log['Sequence'] == sequence].iloc[0]
+
+            number = float(pred_row['Numbers'])
+            predicted_class = int(round_row['predicted_class'])
+            stake_flag = float(round_row['Unnamed: 2']) if 'Unnamed: 2' in rounds_log.columns else 0.0
+
+            print(f"🔄 Processing Sequence {sequence}...")
+
+            
+            # Ensure stake_flag is a valid number
+            stake_flag = round_row.get('Unnamed: 2', 0.0)  # Defaults to 0.0 if missing
+
+            if config.REAL_STAKING and (pd.isna(stake_flag) or float(stake_flag) != 1.0):
+                continue  # Skip processing if REAL_STAKING is enabled and stake flag is not 1.0
+
+
+            previous_balance = balance
+
+            # Trading logic
+            if predicted_class == 1:
+                continue  # No trade
+            elif predicted_class == 2 and number > 4.99:
+                balance += (staking * 5)
+                trade_made = True
+            elif predicted_class == 2 and number <= 4.99:
+                balance -= staking
+                trade_made = True
+            elif predicted_class == 3 and number > 8.99:
+                balance += (staking * 9)
+                trade_made = True
+            elif predicted_class == 3 and number <= 8.99:
+                balance -= staking
+                trade_made = True
+
+            # Update stop loss and next target dynamically
+            if balance >= next_target - 1:
+                stop_loss = next_target - 100
+                next_target += 300
+                print(f"🔺 New Stop-Loss Set: {stop_loss}, Next Target: {next_target}")
+
+            # Stop loss condition
+            if config.REAL_STAKING and balance <= stop_loss + 9:
+                print(f"\n🚨 Stop-Loss Triggered at {balance} 🚨")
+                save_state(balance, stop_loss, next_target, sequence)
+                return True  
+
+            last_sequence = sequence  # Update last processed sequence
+
+        save_state(balance, stop_loss, next_target, last_sequence)  # Save state after loop
+        return False  
+
+    except FileNotFoundError:
+        return False
+    except Exception as e:
+        print(f"⚠️ Error during trade simulation: {e}")
+        return False
+
+def handle_predictions():
+    print("handle_predictions() called")
+    predicted_class = make_prediction()
+    if predicted_class is not None:
+        print(f"Handling prediction: {predicted_class}")
+        if predicted_class == 1:
+            print("Executing action for class 1...")
+        elif predicted_class == 2:
+            print("Executing action for class 2...")
+            if config.ENABLE_ACTIONS:
+                #pyautogui.click(*config.CLICK_LOCATION_CLASS_2)
+                print("HI2")
+        elif predicted_class == 3:
+            print("Executing action for class 3...")
+            if config.ENABLE_ACTIONS:
+                #pyautogui.click(*config.CLICK_LOCATION_CLASS_3)
+                print("HI3")
+
+
+
+def main():
+    while True:
+        monitor_and_process()
+        handle_predictions()
+        stop_trading = simulate_trade()  # Run the trade simulation
+        #process_staking()
+        #check_staking()
+        #check_balance() 
+        
+        # Reload the latest state after each iteration
+        balance, stop_loss, next_target, last_sequence = load_state()
+        
+        if balance <= stop_loss + 9:  # Check stop-loss condition
+            if config.REAL_STAKING:  # If real trading is enabled, stop execution
+                print("\n❌ Trading stopped due to stop-loss. Exiting program.")
+                break  
+            else:  # If real trading is off, print a message and continue looping
+                print("\n⚠️ REAL_STAKING is False, but stop-loss condition met. Looping continues...")
+
+        time.sleep(5)  # Pause before next iteration
+
+if __name__ == "__main__":
+    main()
+---------------------------------------------------------------------------
+above is the complete working program==
+===========================================================================================================
+now the cordinate is the rectangle that the other screen location is nested in-------
+0-----------------------
+487, 280, 360, 440,
+-------------------------------
+======================================================================================================
+the code below screen position change in reltivity ---
+---------------------------------------------------------
+import os
+import json
+import pyautogui
+import positionsChanges  # Import old positions
+import originalscreen  # Import base screen positions
+
+CONFIG_FILE = "positionsChanges.py"
+
+def scale_position(original_pos, old_rect, new_rect):
+    """Scale positions relative to the old and new screen rectangle."""
+    old_x, old_y, old_width, old_height = old_rect
+    new_x, new_y, new_width, new_height = new_rect
+
+    scale_x = new_width / old_width
+    scale_y = new_height / old_height
+
+    if isinstance(original_pos, tuple):
+        return tuple(
+            int((coord - old_x) * scale_x + new_x if i % 2 == 0 else (coord - old_y) * scale_y + new_y)
+            for i, coord in enumerate(original_pos)
+        )
+    return original_pos
+
+def update_config(new_screen_rectangle):
+    """Updates positionsChanges.py with adjusted positions relative to the new screen rectangle."""
+    old_screen_rectangle = positionsChanges.C1_SCREEN_RECTANGLE  # Get old rectangle from file
+
+    # Adjust all positions
+    new_positions = {
+        "WATCH_REGION": scale_position(originalscreen.WATCH_REGION, old_screen_rectangle, new_screen_rectangle),
+        "SCREENSHOT_REGION2": scale_position(originalscreen.SCREENSHOT_REGION2, old_screen_rectangle, new_screen_rectangle),
+        "SCREEN_POSITIONS": {key: scale_position(value, old_screen_rectangle, new_screen_rectangle) for key, value in originalscreen.SCREEN_POSITIONS.items()},
+        "TOGGLE_BUTTON_POS": scale_position(originalscreen.TOGGLE_BUTTON_POS, old_screen_rectangle, new_screen_rectangle),
+        "STAKE_FIELD_POS": scale_position(originalscreen.STAKE_FIELD_POS, old_screen_rectangle, new_screen_rectangle),
+        "SCROLL_POS": scale_position(originalscreen.SCROLL_POS, old_screen_rectangle, new_screen_rectangle),
+        "NUMBER_PAD_POSITIONS": {key: scale_position(value, old_screen_rectangle, new_screen_rectangle) for key, value in originalscreen.NUMBER_PAD_POSITIONS.items()},
+        "TOGGLE_REGION": scale_position(originalscreen.TOGGLE_REGION, old_screen_rectangle, new_screen_rectangle),
+        "STAKE_REGION": scale_position(originalscreen.STAKE_REGION, old_screen_rectangle, new_screen_rectangle),
+        "CLICK_LOCATION_CLASS_2": scale_position(originalscreen.CLICK_LOCATION_CLASS_2, old_screen_rectangle, new_screen_rectangle),
+        "CLICK_LOCATION_CLASS_3": scale_position(originalscreen.CLICK_LOCATION_CLASS_3, old_screen_rectangle, new_screen_rectangle),
+        "SCREENSHOT_REGION": scale_position(originalscreen.SCREENSHOT_REGION, old_screen_rectangle, new_screen_rectangle),
+        "C1_SCREEN_RECTANGLE": new_screen_rectangle,  # Update the screen rectangle
+    }
+
+    # Write to positionsChanges.py
+    with open(CONFIG_FILE, "w") as f:
+        f.write("# Auto-generated config file\n\n")
+        for key, value in new_positions.items():
+            key = f"C1_{key}"  # Add the 'C1_' prefix
+            if isinstance(value, dict):
+                formatted_dict = {k: tuple(v) for k, v in value.items()}  # Ensure tuples
+                f.write(f"{key} = {formatted_dict}\n")
+            elif isinstance(value, tuple):
+                f.write(f"{key} = {value}\n")
+            else:
+                f.write(f"{key} = {json.dumps(value)}\n")
+
+    print(f"Updated {CONFIG_FILE} with new screen positions based on new screen rectangle.")
+
+if __name__ == "__main__":
+    # Example of new screen rectangle (x, y, width, height)
+    new_screen_rectangle = (100, 50, 1200, 800)  # Change this based on the new website layout
+    update_config(new_screen_rectangle)
+--------------------------------------------------------------------------------------
+the code below is the almost correct config.py======
+=========================================
+# positionsChanges.py
+
+import os
+import positionsChanges
+config1 = positionsChanges
+WATCH_REGION = config1.C1_WATCH_REGION
+SCREENSHOT_REGION2 = config1.C1_SCREENSHOT_REGION2
+
+
+
+# Trade simulation settingsn
+INITIAL_BALANCE = 488.60
+STAKING_AMOUNT = "10.00"
+STOP_LOSS = 468.10
+NEXT_TARGET =5000.00
+# config.py
+MODEL_SELECTION = 1  # Change to 0 to use model112.onnx
+MODEL_PATHS = {
+    1: "model12.onnx",
+    0: "model112.onnx"
+}
+# Action locations (modify based on screen size)
+CLICK_LOCATION_CLASS_2 = config1.C1_CLICK_LOCATION_CLASS_2
+CLICK_LOCATION_CLASS_3 = config1.C1_CLICK_LOCATION_CLASS_3
+# Toggle button region (x, y, width, height)
+TOGGLE_REGION = config1.C1_TOGGLE_REGION
+# Staking amount region (x, y, width, height)
+STAKE_REGION = config1.C1_STAKE_REGION
+# Click positions
+TOGGLE_BUTTON_POS = config1.C1_TOGGLE_BUTTON_POS 
+STAKE_FIELD_POS = config1.C1_STAKE_FIELD_POS
+SCROLL_POS = config1.C1_SCROLL_POS
+NUMBER_PAD_POSITIONS = config1.C1_NUMBER_PAD_POSITIONS
+# Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_FILE = os.path.join(BASE_DIR, "predictions_log.csv")
+# Screenshot region (x, y, width, height)
+SCREENSHOT_REGION = config1.C1_SCREENSHOT_REGION
+# Screen positions stored as a dictionary for easy modification
+
+SCREEN_POSITIONS = config1.C1_SCREEN_POSITIONS
+
+# Base resolution (Your current screen resolution)
+BASE_SCREEN_WIDTH = config1.C1_BASE_SCREEN_WIDTH 
+BASE_SCREEN_HEIGHT = config1.C1_BASE_SCREEN_HEIGHT
+
+
+# File paths
+REFERENCE_IMAGE_PATH = "flew_away_template1.png"
+IMAGE_2_PATH = "Screenshot_2.png"
+IMAGE_1_PATH = "Screenshot_1.png"
+CAPTURED_IMAGE = "button_watch12.png"
+REFERENCE_IMAGE_PATH1 = r"C:\Users\DArK_SIDE\Documents\sporty\digits\New folder"
+PREDICTIONS_LOG = "predictions_log.csv"
+ROUNDS_LOG = "rounds_log.csv"
+STATE_FILE = "state.csv"
+# Thresholds
+THRESHOLD = 0.8  # Adjust based on template matching sensitivity
+MAX_BLACK_RATIO = 0.50  # If >95% of pixels are black, retake screenshot
+TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"  # Adjust based on your installation
+SCREEN_RECTANGLE = config1.C1_SCREEN_RECTANGLE
+# OCR Configuration
+OCR_CONFIG = "--oem 3 --psm 6"  # Common OCR config for Tesseract
+REAL_STAKING = False
+ENABLE_ACTIONS = False
+------------------------------------------------------------------

@@ -1,0 +1,62 @@
+import numpy as np
+import onnxruntime as ort
+from sklearn.preprocessing import OneHotEncoder
+import threading
+import os
+import time
+
+# Function to make predictions and trigger callback upon prediction
+def make_prediction(callback):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    onnx_model_path = os.path.join(current_dir, 'class_prediction_model.onnx')
+    session = ort.InferenceSession(onnx_model_path)
+
+    # Initial sequence setup
+    sequence_length = 2
+    encoder = OneHotEncoder(sparse_output=False, categories='auto')
+    encoder.fit(np.array([1, 2]).reshape(-1, 1))
+
+    # Initial sequence to begin prediction
+    current_sequence = [1, 2]  # Example starting sequence
+
+    while True:
+        # Perform the prediction
+        X_input = np.array([current_sequence], dtype=np.float32)
+        input_name = session.get_inputs()[0].name
+        output_name = session.get_outputs()[0].name
+        prediction = session.run([output_name], {input_name: X_input})[0]
+        predicted_class = np.argmax(prediction, axis=1)[0] + 1  # Convert back to class
+        print(f"Prediction made: {predicted_class}")
+
+        # Trigger the callback function with the predicted class
+        callback(predicted_class)
+
+        # Wait for actual class feedback (could be from another part of the program)
+        actual_class = yield_actual_class(predicted_class)
+
+        # Simulate model self-adjustment based on feedback
+        if predicted_class == actual_class:
+            print("Correct prediction!")
+        else:
+            print(f"Incorrect prediction. Correct class was {actual_class}. Adjusting...")
+
+        # Update current sequence by adding actual class as the next step
+        current_sequence.append(actual_class)
+        current_sequence = current_sequence[-sequence_length:]
+
+        time.sleep(1)  # Optional: Add a delay before the next prediction round
+
+# Generator function to simulate waiting for feedback input
+def yield_actual_class(predicted_class):
+    while True:
+        actual_class = int(input(f"Enter the actual class for prediction {predicted_class} (1 or 2): "))
+        if actual_class in [1, 2]:
+            return actual_class
+        print("Invalid class. Please enter 1 or 2.")
+
+# Function to start the prediction process in a separate thread
+def start_prediction_thread(callback):
+    prediction_thread = threading.Thread(target=make_prediction, args=(callback,))
+    prediction_thread.daemon = True  # Daemon thread will exit when the main program exits
+    prediction_thread.start()
+
